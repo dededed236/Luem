@@ -62,6 +62,7 @@ int main(int argc, char *argv[])
 
     // Install the Point-To-Point Connections between Nodes
     NetDeviceContainer d02, d12, d23, d43, botDeviceContainer[NUMBER_OF_BOTS], firewallBotLinks[NUMBER_OF_BOTS];
+    NetDeviceContainer extraDeviceContainer[NUMBER_OF_EXTRA_NODES]; // ประกาศตัวแปรที่หายไป
     d02 = pp1.Install(nodes.Get(0), nodes.Get(1));  // Node 0 connected to Node 1
     d12 = pp1.Install(nodes.Get(0), nodes.Get(2));  // Node 0 connected to Node 2
     d23 = pp1.Install(nodes.Get(1), nodes.Get(3));  // Node 1 connected to Node 3
@@ -135,15 +136,15 @@ int main(int argc, char *argv[])
         onOffApp[k].Stop(Seconds(MAX_SIMULATION_TIME));
     }
 
-    // Blocking bot IPs at the firewall using Ipv4StaticRouting
+    // Blocking bot IPs at the firewall using Ipv4StaticRoutingHelper
     Ptr<Ipv4> firewallIpv4 = firewallNode->GetObject<Ipv4>();
     if (!firewallIpv4)
     {
         NS_FATAL_ERROR("Failed to get Ipv4 instance from firewallNode");
     }
 
-    Ipv4RoutingHelper routingHelper;
-    Ptr<Ipv4StaticRouting> staticRouting = routingHelper.GetStaticRouting(firewallIpv4);
+    Ipv4StaticRoutingHelper staticRoutingHelper; // เปลี่ยนเป็น Ipv4StaticRoutingHelper
+    Ptr<Ipv4StaticRouting> staticRouting = staticRoutingHelper.GetStaticRouting(firewallIpv4);
     for (int i = 0; i < NUMBER_OF_BOTS; ++i)
     {
         Ptr<Ipv4> botIpv4 = botNodes.Get(i)->GetObject<Ipv4>();
@@ -165,31 +166,26 @@ int main(int argc, char *argv[])
 
     // UDPSink on the receiver side
     PacketSinkHelper UDPsink("ns3::UdpSocketFactory", Address(InetSocketAddress(Ipv4Address::GetAny(), UDP_SINK_PORT)));
-    ApplicationContainer UDPSinkApp = UDPsink.Install(nodes.Get(3));  // ติดตั้งบนโหนดที่ 3
-    UDPSinkApp.Start(Seconds(0.0));
-    UDPSinkApp.Stop(Seconds(MAX_SIMULATION_TIME));
+    ApplicationContainer sinkApps = UDPsink.Install(nodes.Get(1)); // Node 1 as the sink
+    sinkApps.Start(Seconds(0.0));
+    sinkApps.Stop(Seconds(MAX_SIMULATION_TIME));
 
-    // TCP Sink Application on the server side
-    PacketSinkHelper TCPsink("ns3::TcpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), TCP_SINK_PORT));
-    ApplicationContainer TCPSinkApp = TCPsink.Install(nodes.Get(3));  // ติดตั้งบนโหนดที่ 3
-    TCPSinkApp.Start(Seconds(0.0));
-    TCPSinkApp.Stop(Seconds(MAX_SIMULATION_TIME));
+    // TCP Sink on node 3
+    PacketSinkHelper TCPSink("ns3::TcpSocketFactory", Address(InetSocketAddress(Ipv4Address::GetAny(), TCP_SINK_PORT)));
+    ApplicationContainer sinkTcpApps = TCPSink.Install(nodes.Get(3)); // Node 3 as the sink
+    sinkTcpApps.Start(Seconds(0.0));
+    sinkTcpApps.Stop(Seconds(MAX_SIMULATION_TIME));
 
-    // Flow Monitor Setup
-    FlowMonitorHelper flowMonitorHelper;
-    Ptr<FlowMonitor> flowMonitor = flowMonitorHelper.InstallAll();
+    // Setup Flow Monitor
+    FlowMonitorHelper flowHelper;
+    Ptr<FlowMonitor> monitor = flowHelper.InstallAll();
 
     Simulator::Stop(Seconds(MAX_SIMULATION_TIME));
-
-    // เริ่มการจำลองสถานการณ์
     Simulator::Run();
 
-    // สรุปรายงานจาก Flow Monitor
-    flowMonitor->CheckForLostPackets();
-    Ptr<Ipv4FlowProbe> flowProbe = DynamicCast<Ipv4FlowProbe>(flowMonitor);
-    flowProbe->SerializeToXmlFile("flow-monitor-results.xml", true, true);
+    // Serialize Flow Monitor results to an XML file
+    monitor->SerializeToXmlFile("flow-monitor-results.xml", true, true);
 
     Simulator::Destroy();
-
     return 0;
 }
